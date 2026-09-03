@@ -1,0 +1,363 @@
+<!DOCTYPE html>
+<html lang="es" class="h-full bg-slate-900 text-slate-100">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>HVAC Pro - Gestión Técnico & Campo</title>
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#0284c7">
+  <!-- Tailwind CSS -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Supabase SDK -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <!-- Signature Pad -->
+  <script src="https://cdn.jsdelivr.net/npm/signature_pad@4.1.7/dist/signature_pad.umd.min.js"></script>
+</head>
+<body class="h-full font-sans antialiased selection:bg-sky-500 selection:text-white">
+
+  <!-- APP CONTAINER -->
+  <div id="app" class="min-h-screen flex flex-col pb-12">
+
+    <!-- TOP HEADER -->
+    <header class="bg-slate-800 border-b border-slate-700 px-4 py-3 flex justify-between items-center sticky top-0 z-40 shadow-lg">
+      <div class="flex items-center space-x-2">
+        <span class="text-2xl">❄️</span>
+        <div>
+          <h1 class="font-bold text-lg leading-tight text-sky-400">HVAC Pro</h1>
+          <p id="user-role-badge" class="text-xs text-slate-400">Sin Sesión</p>
+        </div>
+      </div>
+      <button id="btn-logout" onclick="logout()" class="hidden bg-slate-700 hover:bg-slate-600 text-xs px-3 py-1.5 rounded-lg border border-slate-600 transition">
+        🔒 Cambiar Perfil
+      </button>
+    </header>
+
+    <!-- NOTIFICACIÓN TOAST ADMIN REALTIME -->
+    <div id="toast-notification" class="hidden fixed top-16 right-4 left-4 md:left-auto md:w-96 bg-emerald-600 text-white p-4 rounded-xl shadow-2xl z-50 flex items-center justify-between border border-emerald-400 animate-bounce">
+      <div>
+        <p class="font-bold text-sm">🎉 ¡Nuevo Reporte Firmado!</p>
+        <p id="toast-message" class="text-xs mt-1">El técnico finalizó un trabajo.</p>
+      </div>
+      <button onclick="closeToast()" class="text-white font-bold ml-2">✕</button>
+    </div>
+
+    <!-- MAIN VIEW CONTAINER -->
+    <main class="flex-1 p-4 max-w-5xl w-full mx-auto">
+
+      <!-- VISTA 1: LOGIN / SELECTOR DE PERFIL -->
+      <section id="view-login" class="space-y-6 py-8 max-w-md mx-auto">
+        <div class="text-center space-y-2">
+          <h2 class="text-2xl font-bold text-white">Iniciar Sesión de Campo</h2>
+          <p class="text-slate-400 text-sm">Selecciona tu usuario e ingresa tu PIN de acceso</p>
+        </div>
+
+        <div class="bg-slate-800 p-6 rounded-2xl border border-slate-700 shadow-xl space-y-4">
+          <div>
+            <label class="block text-xs font-medium text-slate-400 mb-1">Usuario / Técnico</label>
+            <select id="login-user-select" class="w-full bg-slate-900 border border-slate-700 rounded-xl p-3 text-white focus:ring-2 focus:ring-sky-500 outline-none">
+              <option value="">Cargando usuarios...</option>
+            </select>
+          </div>
+
+          <div>
+            <label class="block text-xs font-medium text-slate-400 mb-1">PIN de Seguridad</label>
+            <input type="password" id="login-pin" maxlength="6" placeholder="****" class="w-full bg-slate-900 border border-slate-700 rounded-xl p-3 text-center text-2xl tracking-widest text-white focus:ring-2 focus:ring-sky-500 outline-none">
+          </div>
+
+          <button onclick="autenticarUsuario()" class="w-full bg-sky-600 hover:bg-sky-500 text-white font-bold py-3.5 rounded-xl shadow-lg transition duration-200">
+            Ingresar al Sistema
+          </button>
+        </div>
+      </section>
+
+      <!-- VISTA 2: PANEL ADMINISTRADOR -->
+      <section id="view-admin" class="hidden space-y-6">
+        <div class="flex justify-between items-center flex-wrap gap-2">
+          <h2 class="text-xl font-bold text-white">Torre de Control - Administración</h2>
+          <button onclick="mostrarModalNuevaOrden()" class="bg-sky-600 hover:bg-sky-500 text-white text-xs font-bold px-4 py-2.5 rounded-xl flex items-center gap-1 shadow-md">
+            <span>+</span> Asignar Trabajo
+          </button>
+        </div>
+
+        <!-- TABLERO DE TRABAJOS (REALTIME) -->
+        <div class="bg-slate-800 rounded-2xl border border-slate-700 overflow-hidden shadow-lg">
+          <div class="p-4 border-b border-slate-700 flex justify-between items-center bg-slate-800/50">
+            <h3 class="font-semibold text-sm text-slate-300">Órdenes de Trabajo en Curso</h3>
+            <span id="counter-ordenes" class="bg-sky-950 text-sky-400 text-xs px-2.5 py-0.5 rounded-full font-bold border border-sky-800/50">0 activas</span>
+          </div>
+          <div id="admin-orders-list" class="divide-y divide-slate-700/60">
+            <!-- Render dinámico de órdenes -->
+          </div>
+        </div>
+
+        <!-- ABM RÁPIDO CLIENTES Y EQUIPOS -->
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div class="bg-slate-800 p-4 rounded-2xl border border-slate-700 space-y-3">
+            <h3 class="font-semibold text-sm text-sky-400">Nuevo Cliente y Domicilio</h3>
+            <form id="form-cliente" onsubmit="guardarCliente(event)" class="space-y-2 text-xs">
+              <input type="text" id="cli-nombre" placeholder="Nombre y Apellido *" required class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-white">
+              <input type="text" id="cli-direccion" placeholder="Dirección *" required class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-white">
+              <div class="grid grid-cols-2 gap-2">
+                <input type="text" id="cli-ciudad" placeholder="Ciudad *" required class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-white">
+                <input type="tel" id="cli-whatsapp" placeholder="WhatsApp (Ej: +549...)" required class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-white">
+              </div>
+              <input type="email" id="cli-email" placeholder="Correo Electrónico" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-white">
+              <button type="submit" class="w-full bg-slate-700 hover:bg-slate-600 font-bold py-2 rounded-lg border border-slate-600 transition">
+                Registrar Cliente
+              </button>
+            </form>
+          </div>
+
+          <!-- LISTA DE CLIENTES REGISTRADOS -->
+          <div class="bg-slate-800 p-4 rounded-2xl border border-slate-700 space-y-3 flex flex-col">
+            <h3 class="font-semibold text-sm text-sky-400">Clientes en Sistema</h3>
+            <div id="admin-clientes-list" class="flex-1 overflow-y-auto max-h-56 space-y-2 text-xs">
+              <!-- Render clientes -->
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- VISTA 3: PANEL TÉCNICO (CAMPO) -->
+      <section id="view-tecnico" class="hidden space-y-4">
+        <div class="bg-slate-800 p-4 rounded-2xl border border-slate-700 flex justify-between items-center shadow-md">
+          <div>
+            <h2 class="font-bold text-white">Mis Misionalidades Asignadas</h2>
+            <p class="text-xs text-slate-400">Selecciona una orden para comenzar la ejecución</p>
+          </div>
+          <span class="text-xl">🛠️</span>
+        </div>
+
+        <div id="tecnico-orders-list" class="space-y-3">
+          <!-- Render mis tareas -->
+        </div>
+      </section>
+
+      <!-- VISTA 4: EJECUCIÓN DE TRABAJO Y REPORTES -->
+      <section id="view-ejecucion" class="hidden space-y-6">
+        <button onclick="volverAPanel()" class="text-xs text-sky-400 hover:underline flex items-center gap-1 font-semibold">
+          ← Volver al Panel
+        </button>
+
+        <div id="ejecucion-header" class="bg-slate-800 p-4 rounded-2xl border border-slate-700 space-y-1 shadow-lg">
+          <!-- Render header orden actual -->
+        </div>
+
+        <!-- PASO 1: FICHA TÉCNICA Y ESCANEO CON IA -->
+        <div class="bg-slate-800 p-5 rounded-2xl border border-slate-700 space-y-4 shadow-lg">
+          <div class="flex justify-between items-center">
+            <h3 class="font-bold text-sm text-sky-400 flex items-center gap-2">
+              <span>📷</span> Relevamiento de Ficha Técnica (Visión IA)
+            </h3>
+            <span class="text-xs bg-sky-950 text-sky-400 px-2 py-0.5 rounded border border-sky-800">Gemini 1.5 Flash</span>
+          </div>
+
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <!-- UNIDAD INTERIOR -->
+            <div class="bg-slate-900 p-4 rounded-xl border border-slate-800 space-y-3">
+              <p class="text-xs font-bold text-slate-300">Unidad Interior (UI)</p>
+              <input type="file" id="foto-ui" accept="image/*" capture="environment" class="hidden" onchange="procesarFotoIA('UI', event)">
+              <button onclick="document.getElementById('foto-ui').click()" class="w-full bg-slate-800 hover:bg-slate-700 border border-dashed border-slate-600 rounded-xl p-3 text-xs text-slate-300 flex flex-col items-center gap-1 transition">
+                <span>📸 Fotografiar Placa UI</span>
+                <span class="text-[10px] text-slate-500">Auto-extrae Marca, Modelo, Serie, Capacidad</span>
+              </button>
+              <div id="loader-ia-ui" class="hidden text-xs text-amber-400 text-center animate-pulse">⚡ Gemini procesando imagen UI...</div>
+              <div class="space-y-1.5 text-xs">
+                <input type="text" id="ui-marca" placeholder="Marca UI" class="w-full bg-slate-800 border border-slate-700 rounded p-2 text-white">
+                <input type="text" id="ui-modelo" placeholder="Modelo UI" class="w-full bg-slate-800 border border-slate-700 rounded p-2 text-white">
+                <input type="text" id="ui-serie" placeholder="N° Serie UI" class="w-full bg-slate-800 border border-slate-700 rounded p-2 text-white">
+                <input type="text" id="ui-capacidad" placeholder="Capacidad (Frigorías / BTU)" class="w-full bg-slate-800 border border-slate-700 rounded p-2 text-white">
+              </div>
+            </div>
+
+            <!-- UNIDAD EXTERIOR -->
+            <div class="bg-slate-900 p-4 rounded-xl border border-slate-800 space-y-3">
+              <p class="text-xs font-bold text-slate-300">Unidad Exterior (UE)</p>
+              <input type="file" id="foto-ue" accept="image/*" capture="environment" class="hidden" onchange="procesarFotoIA('UE', event)">
+              <button onclick="document.getElementById('foto-ue').click()" class="w-full bg-slate-800 hover:bg-slate-700 border border-dashed border-slate-600 rounded-xl p-3 text-xs text-slate-300 flex flex-col items-center gap-1 transition">
+                <span>📸 Fotografiar Placa UE</span>
+                <span class="text-[10px] text-slate-500">Auto-extrae Gas, Consumo, Voltaje, Capacidad</span>
+              </button>
+              <div id="loader-ia-ue" class="hidden text-xs text-amber-400 text-center animate-pulse">⚡ Gemini procesando imagen UE...</div>
+              <div class="grid grid-cols-2 gap-1.5 text-xs">
+                <input type="text" id="ue-marca" placeholder="Marca UE" class="bg-slate-800 border border-slate-700 rounded p-2 text-white">
+                <input type="text" id="ue-modelo" placeholder="Modelo UE" class="bg-slate-800 border border-slate-700 rounded p-2 text-white">
+                <input type="text" id="ue-serie" placeholder="N° Serie UE" class="bg-slate-800 border border-slate-700 rounded p-2 text-white">
+                <select id="ue-gas" class="bg-slate-800 border border-slate-700 rounded p-2 text-white">
+                  <option value="R410A">R410A</option>
+                  <option value="R22">R22</option>
+                  <option value="R32">R32</option>
+                  <option value="R134a">R134a</option>
+                </select>
+                <input type="text" id="ue-voltaje" placeholder="Voltaje (V)" class="bg-slate-800 border border-slate-700 rounded p-2 text-white">
+                <input type="text" id="ue-consumo" placeholder="Consumo (A)" class="bg-slate-800 border border-slate-700 rounded p-2 text-white">
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- PASO 2: CHECKLIST DEDICADO Y MEDICIONES CON CÁLCULO AUTOMÁTICO -->
+        <div class="bg-slate-800 p-5 rounded-2xl border border-slate-700 space-y-4 shadow-lg">
+          <h3 class="font-bold text-sm text-sky-400 flex items-center gap-2">
+            <span>📋</span> Protocolo de Trabajo y Mediciones Automáticas
+          </h3>
+
+          <div id="form-checklist-container" class="space-y-4 text-xs">
+            <!-- Render dinámico según tipo de trabajo -->
+          </div>
+        </div>
+
+        <!-- PASO 3: MATRIZ DE DECISIONES DEL CLIENTE (PREVIA A LA FIRMA) -->
+        <div id="seccion-decisiones-cliente" class="bg-slate-800 p-5 rounded-2xl border border-amber-500/40 space-y-4 shadow-lg">
+          <div>
+            <h3 class="font-bold text-sm text-amber-400 flex items-center gap-2">
+              <span>🤝</span> Decisiones del Cliente sobre Acciones Recomendadas
+            </h3>
+            <p class="text-xs text-slate-400 mt-0.5">El cliente debe definir la acción a tomar para cada anomalía detectada antes de firmar.</p>
+          </div>
+
+          <div id="lista-acciones-recomendadas" class="space-y-3">
+            <!-- Se puebla dinámicamente según mediciones y observaciones -->
+          </div>
+        </div>
+
+        <!-- PASO 4: CAPTURA DE FIRMAS DIGITALES -->
+        <div class="bg-slate-800 p-5 rounded-2xl border border-slate-700 space-y-4 shadow-lg">
+          <h3 class="font-bold text-sm text-sky-400 flex items-center gap-2">
+            <span>✍️</span> Conformidad y Firmas Digitales
+          </h3>
+
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <!-- FIRMA CLIENTE -->
+            <div class="space-y-2">
+              <div class="flex justify-between items-center text-xs">
+                <label class="font-semibold text-slate-300">Firma del Cliente *</label>
+                <button type="button" onclick="clearSignature('cliente')" class="text-xs text-rose-400 hover:underline">Limpiar</button>
+              </div>
+              <div class="bg-slate-900 rounded-xl border border-slate-700 p-1">
+                <canvas id="canvas-firma-cliente" width="350" height="150" class="w-full touch-none bg-slate-900 rounded-lg cursor-crosshair"></canvas>
+              </div>
+            </div>
+
+            <!-- FIRMA TÉCNICO -->
+            <div class="space-y-2">
+              <div class="flex justify-between items-center text-xs">
+                <label class="font-semibold text-slate-300">Firma del Técnico Interviniente *</label>
+                <button type="button" onclick="clearSignature('tecnico')" class="text-xs text-rose-400 hover:underline">Limpiar</button>
+              </div>
+              <div class="bg-slate-900 rounded-xl border border-slate-700 p-1">
+                <canvas id="canvas-firma-tecnico" width="350" height="150" class="w-full touch-none bg-slate-900 rounded-lg cursor-crosshair"></canvas>
+              </div>
+            </div>
+          </div>
+
+          <div>
+            <label class="block text-xs font-semibold text-slate-300 mb-1">Observaciones Finales del Reporte</label>
+            <textarea id="reporte-observaciones" rows="2" placeholder="Detalles adicionales del estado en que queda la instalación..." class="w-full bg-slate-900 border border-slate-700 rounded-xl p-3 text-xs text-white"></textarea>
+          </div>
+
+          <button onclick="guardarYFinalizarReporte()" class="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-4 rounded-xl text-sm shadow-xl transition">
+            Finalizar Trabajo y Notificar al Administrador
+          </button>
+        </div>
+      </section>
+
+      <!-- VISTA 5: ENCUESTA DE SATISFACCIÓN (PÚBLICA PARA EL CLIENTE) -->
+      <section id="view-rating" class="hidden max-w-md mx-auto space-y-6 py-6">
+        <div class="text-center space-y-2">
+          <span class="text-4xl">⭐</span>
+          <h2 class="text-xl font-bold text-white">Califica Nuestro Servicio</h2>
+          <p class="text-xs text-slate-400">Tu opinión nos ayuda a mantener la excelencia técnica</p>
+        </div>
+
+        <form id="form-rating" onsubmit="enviarCalificacion(event)" class="bg-slate-800 p-6 rounded-2xl border border-slate-700 space-y-4 shadow-xl">
+          <!-- PRESENCIA -->
+          <div>
+            <label class="block text-xs font-semibold text-slate-300 mb-1">Presencia e Identificación (1 a 5)</label>
+            <input type="range" id="rate-presencia" min="1" max="5" value="5" class="w-full accent-sky-500">
+          </div>
+          <!-- TRATO -->
+          <div>
+            <label class="block text-xs font-semibold text-slate-300 mb-1">Trato y Comunicación (1 a 5)</label>
+            <input type="range" id="rate-trato" min="1" max="5" value="5" class="w-full accent-sky-500">
+          </div>
+          <!-- PROLIJIDAD -->
+          <div>
+            <label class="block text-xs font-semibold text-slate-300 mb-1">Prolijidad y Limpieza del Área (1 a 5)</label>
+            <input type="range" id="rate-prolijidad" min="1" max="5" value="5" class="w-full accent-sky-500">
+          </div>
+          <!-- GENERAL -->
+          <div>
+            <label class="block text-xs font-semibold text-slate-300 mb-1">Calificación General del Trabajo (1 a 5)</label>
+            <input type="range" id="rate-general" min="1" max="5" value="5" class="w-full accent-emerald-500">
+          </div>
+          <div>
+            <textarea id="rate-comentarios" rows="2" placeholder="Comentarios adicionales sobre el técnico..." class="w-full bg-slate-900 border border-slate-700 rounded-xl p-3 text-xs text-white"></textarea>
+          </div>
+          <button type="submit" class="w-full bg-sky-600 hover:bg-sky-500 text-white font-bold py-3 rounded-xl text-xs">
+            Enviar Evaluación
+          </button>
+        </form>
+      </section>
+
+    </main>
+  </div>
+
+  <!-- MODAL: ASIGNAR NUEVA ÓRDEN (ADMIN) -->
+  <div id="modal-orden" class="hidden fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+    <div class="bg-slate-800 border border-slate-700 rounded-2xl max-w-lg w-full p-6 space-y-4 text-xs shadow-2xl">
+      <div class="flex justify-between items-center">
+        <h3 class="text-sm font-bold text-white">Asignar Nueva Órden de Trabajo</h3>
+        <button onclick="cerrarModalOrden()" class="text-slate-400 hover:text-white">✕</button>
+      </div>
+
+      <form onsubmit="crearOrdenTrabajo(event)" class="space-y-3">
+        <div>
+          <label class="block font-medium text-slate-400 mb-1">Seleccionar Cliente</label>
+          <select id="ord-cliente" required onchange="cargarDomiciliosYEquiposCliente(this.value)" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-white">
+            <option value="">Cargando clientes...</option>
+          </select>
+        </div>
+
+        <div>
+          <label class="block font-medium text-slate-400 mb-1">Domicilio de Atención</label>
+          <select id="ord-domicilio" required class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-white">
+            <option value="">Selecciona cliente primero...</option>
+          </select>
+        </div>
+
+        <div>
+          <label class="block font-medium text-slate-400 mb-1">Técnico Asignado</label>
+          <select id="ord-tecnico" required class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-white">
+            <option value="">Cargando técnicos...</option>
+          </select>
+        </div>
+
+        <div class="grid grid-cols-2 gap-2">
+          <div>
+            <label class="block font-medium text-slate-400 mb-1">Tipo de Trabajo</label>
+            <select id="ord-tipo" required class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-white">
+              <option value="Instalacion">Instalación</option>
+              <option value="Diagnostico">Chequeo Diagnóstico Express</option>
+              <option value="Preventivo">Preventivo Completo</option>
+              <option value="Correctivo">Correctivo</option>
+              <option value="Desmontaje">Desmontaje</option>
+            </select>
+          </div>
+          <div>
+            <label class="block font-medium text-slate-400 mb-1">Fecha Programada</label>
+            <input type="date" id="ord-fecha" required class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-white">
+          </div>
+        </div>
+
+        <button type="submit" class="w-full bg-sky-600 hover:bg-sky-500 font-bold text-white py-3 rounded-xl shadow-lg">
+          Crear y Asignar Orden
+        </button>
+      </form>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
